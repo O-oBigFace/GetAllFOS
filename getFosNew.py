@@ -29,7 +29,7 @@ topFos = [
     138885662
 ]
 
-recordFos = set()
+_RECORD_SET = set()
 
 _HEADERS = {
     'Accept': '*/*',
@@ -43,11 +43,14 @@ _HEADERS = {
 
 _HOST = "https://academic.microsoft.com/api/browse/GetEntityDetails?entityId={0}"
 _SESSION = requests.session()
+_MAXRETRY = 6
+_ERRORMESSAGE = "id: {0} | Error: {1}"
+_INFOMESSAGE = "id: {0} has done."
 
-proxyHost = "http-dyn.abuyun.com"
-proxyPort = "9020"
-proxyUser = "H5JJ8231M78WW99D"
-proxyPass = "C9E7BCAEFC8D2098"
+proxyHost = "zproxy.lum-superproxy.io"
+proxyPort = "22225"
+proxyUser = "lum-customer-hl_6c34939f-zone-zone1"
+proxyPass = "s5tlbqckrdft"
 proxyMeta = "http://%(user)s:%(pass)s@%(host)s:%(port)s" % {
     "host": proxyHost,
     "port": proxyPort,
@@ -95,40 +98,43 @@ def save_dict_to_file(filename, d, mode="w"):
 def getfos(fos_list):
     path_result_json = os.path.join(os.getcwd(), "result", "json")
     path_result = os.path.join(os.getcwd(), "result", "fosdata")
-    error_message = "id: {0} | Error: {1}"
-    info_message = "id: {0} has done."
+
+    # 重载
     for fos in fos_list:
         if isinstance(fos, int):
             fos_id = fos
         else:
             fos_id = fos["id"]
-        if fos_id in recordFos:
+        if fos_id in _RECORD_SET:
             continue
-        recordFos.add(fos_id)
 
-        path_file = os.path.join(path_result_json, str(fos_id))
+        url = _HOST.format(str(fos_id))
 
+        tries = 0
         js = None
-        if os.path.exists(path_file):
-            try:
-                with open(path_file, "r", encoding="utf-8") as f:
-                    js = json.loads(f.read().strip())
-            except Exception as e:
-                print(e)
 
-        if js is None:
-            url = _HOST.format(str(fos_id))
-            tries = 0
-            while tries <= 11:
-                tries += 1
-                try:
-                    html = _get_page(url)
-                    save_str_to_file(os.path.join(path_file), html)
-                    js = json.loads(html.strip())
-                    break
-                except Exception as e:
-                    logger.error(error_message.format(str(fos_id), str(e)) + " | tries: %d" % tries)
-                    time.sleep(tries)
+        file_path = os.path.join(path_result_json, str(id))
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    js = json.loads(f.read())
+                    tries = _MAXRETRY
+            except Exception:
+                os.remove(file_path)
+
+        while tries < _MAXRETRY:
+            tries += 1
+            try:
+                html = _get_page(url)
+                # save_str_to_file(os.path.join(path_result_json, str(fos_id)), html)
+                js = json.loads(html.strip())
+                break
+            except Exception as e:
+                if tries < _MAXRETRY:
+                    logger.info(_ERRORMESSAGE.format(str(fos_id), str(e)) + " | tries: %d" % tries)
+                else:
+                    logger.error(_ERRORMESSAGE.format(str(fos_id), str(e)) + " | tries: %d" % tries)
+                time.sleep(tries)
 
         if js is None:
             continue
@@ -151,7 +157,10 @@ def getfos(fos_list):
                 "cfos": list_cfos
                    }
         save_dict_to_file(path_result, fosdata, "a")
-        logger.info(info_message.format(str(fos_id)))
+        logger.info(_INFOMESSAGE.format(str(fos_id)))
+
+        # 将爬取过的页面加入到 RECORD 集合中
+        _RECORD_SET.add(fos_id)
         if len(list_cfos) > 1:
             getfos(list_cfos)
 
